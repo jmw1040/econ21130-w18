@@ -29,7 +29,9 @@ $$
 $$
 The individual takes his wage $w$ as given, he chooses hours of work $h$ and consumption $c$. He also chooses whether to work in the labor force or to work at home where he has an equivalent wage $r$.
 
-<span class="label label-success">Question 1</span> Do we expect to see any income effect given our model? What if we substituted $c$ in the utility for $\frac{c^{1+\eta}}{1+\eta}$?
+#### Problem 1 
+
+The income effect means that as wages goes up, the individual will substitute away from wages a bit because they will now make the same amount of money is less amount of time. The way our problem is currently set up, as wages go up we will not see any income effect because the individual wants to consume as much as possible if we substituted $c$ in the utility for $\frac{c^{1+\eta}}{1+\eta}$ then it is possible that we would see an income effect because the individual is not just trying to maximize consumption any more. 
 
 ## Simulating data
 
