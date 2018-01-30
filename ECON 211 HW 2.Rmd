@@ -33,6 +33,7 @@ The individual takes his wage $w$ as given, he chooses hours of work $h$ and con
 
 The income effect means that as wages goes up, the individual will substitute away from wages a bit because they will now make the same amount of money is less amount of time. The way our problem is currently set up, as wages go up we will not see any income effect because the individual wants to consume as much as possible if we substituted $c$ in the utility for $\frac{c^{1+\eta}}{1+\eta}$ then it is possible that we would see an income effect because the individual is not just trying to maximize consumption any more. 
 
+
 ## Simulating data
 
 We are going to simulate a data set where agents will choose participation as well as the number of hours if they decide to work. This requires for us to specify how each of the individual specific variables are drawn. We then set the following:
@@ -47,34 +48,67 @@ $$
 
 and finally $(X_i,Z_i,\epsilon_i,u_i,\xi_i)$ are independent normal draws. Given all of this we can simulate our data. 
 
-<span class="label label-success">Question 2</span> What does the $a$ parameter capture here?
+#### Problem 2 
 
+The parameter a captures if there is a relationship between $r_i$ the amount of money the agent can make at home and $\beta_i$ the agent's distaste for work. If a is any value greater than zero then there is a relationship between $\beta_i$ and $r_i$. 
+
+```{r, results='hide'}
+library(data.table)
+p  = list(gamma = 0.8,beta=1,a=0,rho=1,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
+N=10000  # size of the simulation
+simdata0 = data.table(i=1:N,X=rnorm(N))
+
+# simulating variables
+simdata0[,X := rnorm(N)]
+simdata0[,Z := rnorm(N)]
+simdata0[,u := rnorm(N)]
+simdata0[,lw := p$eta*X  + Z + 0.2*u ]  # log wage
+
+simdata0[,xi := rnorm(N)*0.2]
+simdata0[,lr := lw + p$delta0+ p$delta*Z + xi]; # log home productivity
+
+simdata0[,eps:=rnorm(N)*0.2]
+simdata0[,beta := exp(p$nu*X  + p$a*xi + eps)]; # heterogenous beta coefficient
+
+# compute decision variables
+simdata0[, lfp := log(p$rho) + lw >= lr] # labor force participation
+simdata0[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
+simdata0[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
+simdata0[,mean(lfp)]
+```
 ```{r, results='hide'}
 library(data.table)
 p  = list(gamma = 0.8,beta=1,a=1,rho=1,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
 N=10000  # size of the simulation
-simdata = data.table(i=1:N,X=rnorm(N))
+simdata1 = data.table(i=1:N,X=rnorm(N))
 
 # simulating variables
-simdata[,X := rnorm(N)]
-simdata[,Z := rnorm(N)]
-simdata[,u := rnorm(N)]
-simdata[,lw := p$eta*X  + Z + 0.2*u ]  # log wage
+simdata1[,X := rnorm(N)]
+simdata1[,Z := rnorm(N)]
+simdata1[,u := rnorm(N)]
+simdata1[,lw := p$eta*X  + Z + 0.2*u ]  # log wage
 
-simdata[,xi := rnorm(N)*0.2]
-simdata[,lr := lw + p$delta0+ p$delta*Z + xi]; # log home productivity
+simdata1[,xi := rnorm(N)*0.2]
+simdata1[,lr := lw + p$delta0+ p$delta*Z + xi]; # log home productivity
 
-simdata[,eps:=rnorm(N)*0.2]
-simdata[,beta := exp(p$nu*X  + p$a*xi + eps)]; # heterogenous beta coefficient
+simdata1[,eps:=rnorm(N)*0.2]
+simdata1[,beta := exp(p$nu*X  + p$a*xi + eps)]; # heterogenous beta coefficient
 
 # compute decision variables
-simdata[, lfp := log(p$rho) + lw >= lr] # labor force participation
-simdata[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
-simdata[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
-simdata[,mean(lfp)]
+simdata1[, lfp := log(p$rho) + lw >= lr] # labor force participation
+simdata1[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
+simdata1[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
+simdata1[,mean(lfp)]
+```
+We have now our simulated data. 
+
+```{r}
+a1 <- lm(log(h) ~ lw + X, data=simdata1)
+a0 <- lm(log(h) ~ lw + X, data=simdata0)
+summary(a1)
+summary(a0)
 ```
 
-We have now our simulated data. 
 
 <span class="label label-success">Question 3</span> Simulate data with $a=0$ and $a=1$. Comment on the value of the coefficient of the regression of log hours on log wage and X.
 
@@ -92,12 +126,80 @@ As we have seen in class, we need to understand how the error term in the hour r
 Construction of this epxression requires us to recover the parameters $\delta/\sigma_xi,\delta_0/\sigma_xi$. We can get these by running a probit of participation on $Z_i$. 
 
 ```{r}
-fit2 = glm(lfp ~ Z,simdata,family = binomial(link = "probit"))
+fit2 = glm(lfp ~ Z,simdata1,family = binomial(link = "probit"))
+Betas = summary(fit2)
+B_0 = Betas$coefficients[1,1]
+B_1 = Betas$coefficients[2,1]
+
+
+
+simdata0[,lambda_i := pnorm(B_0 + B_1 * Z) / dnorm(B_0 + B_1 * Z)]
+
+heck <- lm(log(h) ~ lw + X + lambda_i , data=simdata0)
+summary(heck)
+
+
+
+
 ```
+
+We get same thing this works well 
 
 <span class="label label-success">Question 5</span> Check that the regression does recover correctly the coefficients. Use them to construct the inverse Mills ratio. Use the correction you created and show that the regression with this extra term delivers the correct estimates for $\gamma$ even in the case where $a\neq 0$.
 
 ## Repeated cross-section
+
+```{r}
+p  = list(gamma = 0.8,beta=1,a=0,rho=1,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
+N=10000  # size of the simulation
+simdatac1 = data.table(i=1:N,X=rnorm(N))
+
+# simulating variables
+simdatac1[,X := rnorm(N)]
+simdatac1[,Z := rnorm(N)]
+simdatac1[,u := rnorm(N)]
+simdatac1[,lw := p$eta*X  + Z + 0.2*u ]  # log wage
+
+simdatac1[,xi := rnorm(N)*0.2]
+simdatac1[,lr := lw + p$delta0+ p$delta*Z + xi]; # log home productivity
+
+simdatac1[,eps:=rnorm(N)*0.2]
+simdatac1[,beta := exp(p$nu*X  + p$a*xi + eps + 0.2*u)]; # heterogenous beta coefficient
+
+# compute decision variables
+simdatac1[, lfp := log(p$rho) + lw >= lr] # labor force participation
+simdatac1[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
+simdatac1[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
+simdatac1[,mean(lfp)]
+
+```
+
+```{r}
+p  = list(gamma = 0.8,beta=1,a=0,rho=1.2,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
+N=10000  # size of the simulation
+simdatac2 = data.table(i=1:N,X=rnorm(N))
+
+# simulating variables
+simdatac2[,X := rnorm(N)]
+simdatac2[,Z := rnorm(N)]
+simdatac2[,u := rnorm(N)]
+simdatac2[,lw := p$eta*X  + Z + 0.2*u ]  # log wage
+
+simdatac2[,xi := rnorm(N)*0.2]
+simdatac2[,lr := lw + p$delta0+ p$delta*Z + xi]; # log home productivity
+
+simdatac2[,eps:=rnorm(N)*0.2]
+simdatac2[,beta := exp(p$nu*X  + p$a*xi + eps + 0.2*u)]; # heterogenous beta coefficient
+
+# compute decision variables
+simdatac2[, lfp := log(p$rho) + lw >= lr] # labor force participation
+simdatac2[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
+simdatac2[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
+simdatac2[,mean(lfp)]
+```
+
+
+
 
 Lastly we want to replicate the approach of Blundell, Duncan and Meghir. To justify such an appraoach we are going to include an additional endogeneity concern between the wage and the disutility of hours of worked. We want to do the following:
 
