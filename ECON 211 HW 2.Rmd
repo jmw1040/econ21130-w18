@@ -19,9 +19,7 @@ require(xtable)
 require(pander)
 ```
 
-This homework builds on what we studied in class. We are going to simulate from the very simple model of labor supply we considered.
-
-The agent problem is
+In the problem set we are following an labor supply model specefied by the following optimization problem. 
 
 $$
 \max_{c,h,e} c - \beta \frac{h^{1+\gamma}}{1+\gamma}\\
@@ -31,7 +29,9 @@ The individual takes his wage $w$ as given, he chooses hours of work $h$ and con
 
 #### Problem 1 
 
-The income effect means that as wages goes up, the individual will substitute away from wages a bit because they will now make the same amount of money is less amount of time. The way our problem is currently set up, as wages go up we will not see any income effect because the individual wants to consume as much as possible if we substituted $c$ in the utility for $\frac{c^{1+\eta}}{1+\eta}$ then it is possible that we would see an income effect because the individual is not just trying to maximize consumption any more. 
+The income effect means that as wages goes up, the individual will substitute away from wages a bit because they will now make the same amount of money in less amount of time. The way our problem is currently set up, as wages go up we will not see any income effect. This is because there is no concavity in C. The relationship with c is and our income is linear. 
+
+ If we were to  substitute $c$ in the utility for $\frac{c^{1+\eta}}{1+\eta}$ then it is possible that we would see an income effect. Now our consumption is no longer linear in consumption but rather concave. This means, that as C increases there is a diminishing marginal return of increasing c even more. Therefore, when the individual has more income, rather than just continuing to increase c, they will choose to diminsh their hours somewhat.  
 
 
 ## Simulating data
@@ -50,7 +50,9 @@ and finally $(X_i,Z_i,\epsilon_i,u_i,\xi_i)$ are independent normal draws. Given
 
 #### Problem 2 
 
-The parameter a captures if there is a relationship between $r_i$ the amount of money the agent can make at home and $\beta_i$ the agent's distaste for work. If a is any value greater than zero then there is a relationship between $\beta_i$ and $r_i$. 
+The parameter a captures if there is a relationship between $r_i$ the amount of money the agent can make at home and $\beta_i$ the agent's distaste for work. If a is any value greater than zero then there is a relationship between $\beta_i$ and $r_i$. This will lead to an endogenity issue that will make it so we do not recover the correct value in our OLS estimation. 
+
+The code below simulates the data when $a=0$ and when $a=1$ 
 
 ```{r, results='hide'}
 library(data.table)
@@ -75,8 +77,7 @@ simdata0[, lfp := log(p$rho) + lw >= lr] # labor force participation
 simdata0[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
 simdata0[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
 simdata0[,mean(lfp)]
-```
-```{r, results='hide'}
+
 library(data.table)
 p  = list(gamma = 0.8,beta=1,a=1,rho=1,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
 N=10000  # size of the simulation
@@ -99,8 +100,10 @@ simdata1[, lfp := log(p$rho) + lw >= lr] # labor force participation
 simdata1[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
 simdata1[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
 simdata1[,mean(lfp)]
+
 ```
-We have now our simulated data. 
+
+Now that we have simulated our data both when $a=0$ and when $a=1$, we can see how when $a=1$ this affects our OLS estimation. 
 
 ```{r}
 a1 <- lm(log(h) ~ lw + X, data=simdata1)
@@ -108,30 +111,60 @@ a0 <- lm(log(h) ~ lw + X, data=simdata0)
 summary(a1)
 summary(a0)
 ```
+### Problem 3 
 
+When $a=1$ we can a coefficient on log wages of 1.15, whereas when $a=0$ we got a coefficient of 1.248. We know that our coefficient of log wage should be $1 / \gamma$ so we should get a coefficient of about 1.25. Clearly, when $a=1$ there is an endogenity issue that is causing our coefficent to be wrong. 
 
-<span class="label label-success">Question 3</span> Simulate data with $a=0$ and $a=1$. Comment on the value of the coefficient of the regression of log hours on log wage and X.
+Intution behind why, having $a=1$ we overestimate the value of $\gamma$
+- when a is equal to 1 there is now a relationship between R and Beta 
+- We only get to observe the people where wage > R. 
+- If we assume there is no relationship between R and Beta then we are believing the people in our sample have some beta. 
+- Because the people we observe are the people with smallers R's this must mean that these people also have smaller Beta's 
+- Us believing that this people should have higher beta's than they actually do, leads to us overestimating the value of gamma. 
 
-
+(I am gonna ask lamadon about this in office hours. )
+(also the intercept)
 
 
 ## Heckman correction
 
 As we have seen in class, Heckman (74) offers a way for us to correct the our regression in order to recover our structural parameters. 
 
-As we have seen in class, we need to understand how the error term in the hour regression correlates with the labor participation decision. 
+As we have seen in class, we need to understand how the error term in the hour regression correlates with the laborparticipation decision. 
 
-<span class="label label-success">Question 4</span> Following what we did in class, and using the class note, derive the expression for the Heckman correction term as a function of known parameters. In other words, derive $E( a \xi_i + \epsilon_i | lfp=1)$.
+#### Problem 4 
 
-Construction of this epxression requires us to recover the parameters $\delta/\sigma_xi,\delta_0/\sigma_xi$. We can get these by running a probit of participation on $Z_i$. 
+$$
+ E[\epsilon | log(\rho w) > log(r_i)] \\ 
+ E[\epsilon | log(\rho w) > \delta_o + log(w_i) + \delta Z_i + \xi_i] \\ 
+ E[\epsilon | log(\rho) > \delta_o + \delta Z_i + \xi_i] \\ 
+$$
+We know that $\epsilon_i$ and $\xi_i$ are jointly normal so we know $E[\epsilon | \xi_i] = a + b\xi_i$ 
+
+$$
+a + bE[\xi_i | \xi_i < log(p) - \delta_0 - \delta Z_i] + 0 
+$$
+Now we can construct the inverse mills ratio and incorporate that term in our regression to get rid of our endogenity issue. 
+
+When we regress labor force particpation on $z_i$ we will find our coefficient2 $\beta_0 = \frac{log(\rho) - \delta_0}{\sigma_{\xi}}$ and $\beta_1 = \frac{\delta}{\sigma_{\xi}}$. Our Inverse Mills ratio can be seen below. 
+
+$$ 
+
+a - \frac{\sigma_{\xi} \phi( \frac{log(p) - \delta_0 - \delta Z_i}{\sigma_{\xi}})}{\Phi ( \frac{log(p) - \delta_0 - \delta Z_i}{\sigma_{\xi}})}
+$$ 
+When we add our inverse mills ratio into our regression we will do so by doing a probit of particpation on $Z_i$. We will call the two variables we recover from this regression as $\beta_0$ and $\beta_1$. When we add a term to our regression to account for this endogenity we will construct it as follows. 
+
+$$
+\frac{\phi(\beta_0 + \beta_1 * Z_i)}{\Phi(\beta_0 + \beta_1 * Z_i)}
+$$
+
+We will now run our regression with this additional term included in the regression. 
 
 ```{r}
 fit2 = glm(lfp ~ Z,simdata1,family = binomial(link = "probit"))
 Betas = summary(fit2)
 B_0 = Betas$coefficients[1,1]
 B_1 = Betas$coefficients[2,1]
-
-
 
 simdata0[,lambda_i := pnorm(B_0 + B_1 * Z) / dnorm(B_0 + B_1 * Z)]
 
@@ -143,9 +176,9 @@ summary(heck)
 
 ```
 
-We get same thing this works well 
+####Problem 5 
 
-<span class="label label-success">Question 5</span> Check that the regression does recover correctly the coefficients. Use them to construct the inverse Mills ratio. Use the correction you created and show that the regression with this extra term delivers the correct estimates for $\gamma$ even in the case where $a\neq 0$.
+If we run the regression no including the variable we constructed above we get a coefficient on log wage of 1.248. We have now by including the inverse mills ration in our regression recovered the correct estiamte for $\gamma$ even in the case where $a\neq 0$.
 
 ## Repeated cross-section
 
@@ -199,6 +232,21 @@ simdatac2[,mean(lfp)]
 ```
 
 
+```{r}
+fitcs1 = glm(lfp ~ Z,simdatac1,family = binomial(link = "probit"))
+Betas = summary(fitcs1)
+B_01 = Betas$coefficients[1,1]
+B_11 = Betas$coefficients[2,1]
+
+fitcs2 = glm(lfp ~ Z,simdatac2,family = binomial(link = "probit"))
+Betas = summary(fitcs2)
+B_02 = Betas$coefficients[1,1]
+B_12 = Betas$coefficients[2,1]
+
+```
+
+####Problem 6 
+- our intercept terms are super different 
 
 
 Lastly we want to replicate the approach of Blundell, Duncan and Meghir. To justify such an appraoach we are going to include an additional endogeneity concern between the wage and the disutility of hours of worked. We want to do the following:
