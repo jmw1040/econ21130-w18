@@ -23,16 +23,16 @@ In the problem set we are following an labor supply model specefied by the follo
 
 $$
 \max_{c,h,e} c - \beta \frac{h^{1+\gamma}}{1+\gamma}\\
-\text{s.t. } c = e \cdot \rho \cdot w\cdot h +(1-e)\cdot r \cdot  h
+\text{s.t. } c = e \cdot \rho \cdot w\cdot h +(1-e)\cdot r \cdot h
 $$
 The individual takes his wage $w$ as given, he chooses hours of work $h$ and consumption $c$. He also chooses whether to work in the labor force or to work at home where he has an equivalent wage $r$.
 
 #### Problem 1 
+For any given change in wage, we know that this affects the agent's hours supplied via two effects - the substitution effect (the relative price of leisure increases as wage rises) and the income effect (the demand for leisure increases as income rises).  
 
-The income effect means that as wages goes up, the individual will substitute away from wages a bit because they will now make the same amount of money in less amount of time. The way our problem is currently set up, as wages go up we will not see any income effect. This is because there is no concavity in C. The relationship with c is and our income is linear. 
+More concretely, the income effect tells us that as wages goes up, the individual will work less because they will now make the same amount of money in less amount of time. The way our problem is currently set up, as wages go up we will not see any income effect. This is because there is no concavity in the consumption term; the relationship between consumption and hours worked is linear.
 
- If we were to  substitute $c$ in the utility for $\frac{c^{1+\eta}}{1+\eta}$ then it is possible that we would see an income effect. Now our consumption is no longer linear in consumption but rather concave. This means, that as C increases there is a diminishing marginal return of increasing c even more. Therefore, when the individual has more income, rather than just continuing to increase c, they will choose to diminsh their hours somewhat.  
-
+If we were to  substitute $c$ in the utility function for $\frac{c^{1+\eta}}{1+\eta}$ then it is possible that we would see an income effect. Now our consumption is no longer linear in consumption but rather, concave. This means that as consumption increases, there are diminishing marginal returns to an increase in $c$. Therefore, when the individual has more income, rather than just continuing to increase consumption, they will instead choose to diminsh their hours somewhat.
 
 ## Simulating data
 
@@ -50,60 +50,45 @@ and finally $(X_i,Z_i,\epsilon_i,u_i,\xi_i)$ are independent normal draws. Given
 
 #### Problem 2 
 
-The parameter a captures if there is a relationship between $r_i$ the amount of money the agent can make at home and $\beta_i$ the agent's distaste for work. If a is any value greater than zero then there is a relationship between $\beta_i$ and $r_i$. This will lead to an endogenity issue that will make it so we do not recover the correct value in our OLS estimation. 
+The parameter $a$ captures the relationship between $r_i$ the amount of money the agent can make at home and $\beta_i$ the agent's distaste for work. If $a$ is any value greater than zero then there is nonzero correlation between $r_i$ and $\beta_i$ due to direct correlation in their error terms. This will lead to an endogenity issue that will make it so we do not recover the correct value in our OLS estimation. 
 
 The code below simulates the data when $a=0$ and when $a=1$ 
 
 ```{r, results='hide'}
-library(data.table)
-p  = list(gamma = 0.8,beta=1,a=0,rho=1,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
-N=10000  # size of the simulation
-simdata0 = data.table(i=1:N,X=rnorm(N))
-
-# simulating variables
-simdata0[,X := rnorm(N)]
-simdata0[,Z := rnorm(N)]
-simdata0[,u := rnorm(N)]
-simdata0[,lw := p$eta*X  + Z + 0.2*u ]  # log wage
-
-simdata0[,xi := rnorm(N)*0.2]
-simdata0[,lr := lw + p$delta0+ p$delta*Z + xi]; # log home productivity
-
-simdata0[,eps:=rnorm(N)*0.2]
-simdata0[,beta := exp(p$nu*X  + p$a*xi + eps)]; # heterogenous beta coefficient
-
-# compute decision variables
-simdata0[, lfp := log(p$rho) + lw >= lr] # labor force participation
-simdata0[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
-simdata0[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
-simdata0[,mean(lfp)]
 
 library(data.table)
-p  = list(gamma = 0.8,beta=1,a=1,rho=1,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
-N=10000  # size of the simulation
-simdata1 = data.table(i=1:N,X=rnorm(N))
+  sim_data <- function(a_val = 0){
+  p  = list(gamma = 0.8,beta=1,a=a_val,rho=1,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
+  N=10000  # size of the simulation
+  simdata0 = data.table(i=1:N,X=rnorm(N))
+  
+  # simulating variables
+  simdata0[,X := rnorm(N)]
+  simdata0[,Z := rnorm(N)]
+  simdata0[,u := rnorm(N)]
+  simdata0[,lw := p$eta*X  + Z + 0.2*u ]  # log wage
+  
+  simdata0[,xi := rnorm(N)*0.2]
+  simdata0[,lr := lw + p$delta0+ p$delta*Z + xi]; # log home productivity
+  
+  simdata0[,eps:=rnorm(N)*0.2]
+  simdata0[,beta := exp(p$nu*X  + p$a*xi + eps)]; # heterogenous beta coefficient
+  
+  # compute decision variables
+  simdata0[, lfp := log(p$rho) + lw >= lr] # labor force participation
+  simdata0[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
+  simdata0[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
+  simdata0[,mean(lfp)]
+  
+  return(simdata0)
+}
 
-# simulating variables
-simdata1[,X := rnorm(N)]
-simdata1[,Z := rnorm(N)]
-simdata1[,u := rnorm(N)]
-simdata1[,lw := p$eta*X  + Z + 0.2*u ]  # log wage
-
-simdata1[,xi := rnorm(N)*0.2]
-simdata1[,lr := lw + p$delta0+ p$delta*Z + xi]; # log home productivity
-
-simdata1[,eps:=rnorm(N)*0.2]
-simdata1[,beta := exp(p$nu*X  + p$a*xi + eps)]; # heterogenous beta coefficient
-
-# compute decision variables
-simdata1[, lfp := log(p$rho) + lw >= lr] # labor force participation
-simdata1[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
-simdata1[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
-simdata1[,mean(lfp)]
+simdata0 = sim_data(a_val = 0)
+simdata1 = sim_data(a_val = 1)
 
 ```
 
-Now that we have simulated our data both when $a=0$ and when $a=1$, we can see how when $a=1$ this affects our OLS estimation. 
+Now that we have simulated our data for both cases $a=0$ and $a=1$, we can see how it affects our OLS estimation when $a=1$: 
 
 ```{r}
 a1 <- lm(log(h) ~ lw + X, data=simdata1)
@@ -111,20 +96,22 @@ a0 <- lm(log(h) ~ lw + X, data=simdata0)
 summary(a1)
 summary(a0)
 ```
+
 ### Problem 3 
+When $a=1$ we find that the coefficient on log wages is `r summary(a1)$coefficients[2,1]`, whereas when $a=0$ we got a coefficient of `r summary(a0)$coefficients[2,1]`. Since we know the true data-generating process, we know that our coefficient of log wage should be $1 / \gamma$ - so the true coefficient should be approximately $1.25$. This verifies that when $a=1$, there exists an endogenity issue that prevents us from recovering the true coefficient $\gamma$ when we let the error terms be correlated. 
 
-When $a=1$ we can a coefficient on log wages of 1.15, whereas when $a=0$ we got a coefficient of 1.248. We know that our coefficient of log wage should be $1 / \gamma$ so we should get a coefficient of about 1.25. Clearly, when $a=1$ there is an endogenity issue that is causing our coefficent to be wrong. 
+Intution behind why having $a=1$ we overestimate the value of $\gamma$:
+- When $a$ is equal to 1, there is now a direct relationship between $R$ and $\beta$. So across individuals, higher values of one correspond to higher values of the other.  
+- We only get to observe the people where $wage > R$. Because higher values of $R$ mean that those people are more likely to stay home, then we know that our working population consists of people with (on average) lower disutilities of labor $\beta$.
+- Then in the working population, we are left with individuals who will work more hours at a given wage. This leads us to overestimate the effect of wages on labor supply. 
+- We are thus left with a higher value of $\gamma$ - and consistent with the result from the regression - a lower value of $1/ \gamma$. 
 
-Intution behind why, having $a=1$ we overestimate the value of $\gamma$
-- when a is equal to 1 there is now a relationship between R and Beta 
-- We only get to observe the people where wage > R. 
-- If we assume there is no relationship between R and Beta then we are believing the people in our sample have some beta. 
+<!-- - If we assume there is no relationship between R and Beta then we are believing the people in our sample have some beta. 
 - Because the people we observe are the people with smallers R's this must mean that these people also have smaller Beta's 
 - Us believing that this people should have higher beta's than they actually do, leads to us overestimating the value of gamma. 
 
 (I am gonna ask lamadon about this in office hours. )
-(also the intercept)
-
+(also the intercept) -->
 
 ## Heckman correction
 
