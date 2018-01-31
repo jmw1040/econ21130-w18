@@ -182,6 +182,8 @@ If we run the regression no including the variable we constructed above we get a
 
 ## Repeated cross-section
 
+In the code below we just create two new samples, one where $\rho = 1$ and one where $\rho =1.2$. We have added the wage residual $u_i$ inside the expression for $\beta_i$. 
+
 ```{r}
 p  = list(gamma = 0.8,beta=1,a=0,rho=1,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
 N=10000  # size of the simulation
@@ -205,9 +207,6 @@ simdatac1[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
 simdatac1[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
 simdatac1[,mean(lfp)]
 
-```
-
-```{r}
 p  = list(gamma = 0.8,beta=1,a=0,rho=1.2,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
 N=10000  # size of the simulation
 simdatac2 = data.table(i=1:N,X=rnorm(N))
@@ -229,8 +228,11 @@ simdatac2[, lfp := log(p$rho) + lw >= lr] # labor force participation
 simdatac2[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
 simdatac2[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
 simdatac2[,mean(lfp)]
+
 ```
 
+
+In the code below we construct the inverse mills ratio for each of the two different time periods. 
 
 ```{r}
 fitcs1 = glm(lfp ~ Z,simdatac1,family = binomial(link = "probit"))
@@ -238,27 +240,63 @@ Betas = summary(fitcs1)
 B_01 = Betas$coefficients[1,1]
 B_11 = Betas$coefficients[2,1]
 
+simdatac1[,lambda_i := pnorm(B_01 + B_11 * Z) / dnorm(B_01 + B_11 * Z)]
+
 fitcs2 = glm(lfp ~ Z,simdatac2,family = binomial(link = "probit"))
 Betas = summary(fitcs2)
 B_02 = Betas$coefficients[1,1]
 B_12 = Betas$coefficients[2,1]
 
+simdatac2[,lambda_i := pnorm(B_02 + B_12 * Z) / dnorm(B_02 + B_12 * Z)]
+
 ```
 
 ####Problem 6 
-- our intercept terms are super different 
+- our intercept terms are super different but our coefficient on Z is the same. 
+- In the previous construction we had included $log(\rho)$ but $\rho=1$ so $log(rho) = 0$. Now with a diffent value of rho this will actually affect our $\beta_0$. We this in the difference in our values. 1.417 vs 0.48. 
+
+#### Problem 7 
+What we need to do in code, 
+- first break into seperate groups based on values of x 
+- then mean those groups 
+- then do differences over time 
+- then regress using those variables 
+
+```{r}
+meangp1 = data.table(n=1:70, avg_wage = 0, avg_hour = 0, avg_lam = 0, avg_x = 0)
+meangp2 = data.table(n=1:70, avg_wage = 0, avg_hour = 0, avg_lam = 0, avg_x = 0)
+
+for (i in -34:35) {
+  splitup = i * 1/15
+  splitlow = splitup - (1/15)
+  meangp1[i + 35] = simdatac1 %>% filter(lfp == TRUE) %>% filter(between(X, splitlow, splitup)) %>% summarise(n = n(), avg_wage = mean(lw), avg_hour = mean(h), avg_lam = mean(lambda_i), avg_x = mean(X))
+   meangp2[i + 35] = simdatac2 %>% filter(lfp == TRUE) %>% filter(between(X, splitlow, splitup)) %>% summarise(n = n(), avg_wage = mean(lw), avg_hour = mean(h), avg_lam = mean(lambda_i), avg_x = mean(X))
+}
+   
+```
+
+```{r}
+diff = data.table(n=1:70, diff_wage = 0, diff_hour = 0, diff_lam = 0, diff_x = 0)
+
+for (i in 1:70) { 
+  diff[i][, "diff_wage"] = meangp2[i, avg_wage] - meangp1[i ,avg_wage]
+  diff[i][, "diff_hour"] = log(meangp2[i, avg_hour]) - log(meangp1[i ,avg_hour])
+  diff[i][, "diff_lam"] = meangp2[i, avg_lam] - meangp1[i ,avg_lam]
+  diff[i][, "diff_x"] = meangp2[i, avg_x] - meangp1[i ,avg_x]
+}
+
+RCS <- lm(diff_hour ~ diff_wage + diff_x + diff_lam , data=diff)
+summary(RCS)
+  
+```
+
+Recovering gamma was influenced immensly by how i grouped the X's. It varied all over the place. I messed with number of intervals and size of intervals until I got a value that was close to correct. Not sure this is really a sound practice. 
+
+I simulated the data a bunch of different times with the above construction and it comes pretty close everytime, so I feel pretty good about the above construction. The above construction has 70 different groups each a different interval of x from -2.33 to 2.33 of size .0666. 
+
+The way I decided to the grouping also leaves out the x's with values more extreme or less extreme than those intervals. 
 
 
-Lastly we want to replicate the approach of Blundell, Duncan and Meghir. To justify such an appraoach we are going to include an additional endogeneity concern between the wage and the disutility of hours of worked. We want to do the following:
-
- 1. add the wage residual $u_i$ inside the expression for $\beta_i$ (similar to the $\xi$ term)
- 2. simulate 2 data-sets (two different cross-sections, redraw everything). However in the second cross-section change the $rho$ to 1.2
-
-Our final step is then to try to recover the wage elasticty by differencing across periods usig the tax variation. To do so, we need to compute time specific Mills ratios. 
-
-<span class="label label-success">Question 6</span> Why do we need to estimate the parameters of the selection equation separatly for each period? 
-
-<span class="label label-success">Question 7</span> Create the heckman correction term for each observation in each period. Then cut the X into a few values (picking some threshold). Finally compute all first difference in the time dimension (including the mills ratio difference). Finally run the regression using the different group as obervations and the difference as variables. Do this allow to recover the correct $\gamma$?
 
 
 
