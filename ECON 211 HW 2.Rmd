@@ -17,6 +17,7 @@ knitr::opts_chunk$set(echo = TRUE)
 require(testthat)
 require(xtable)
 require(pander)
+library(dplyr)
 ```
 
 In the problem set we are following an labor supply model specefied by the following optimization problem. 
@@ -39,11 +40,9 @@ If we were to  substitute $c$ in the utility function for $\frac{c^{1+\eta}}{1+\
 We are going to simulate a data set where agents will choose participation as well as the number of hours if they decide to work. This requires for us to specify how each of the individual specific variables are drawn. We then set the following:
 
 $$
-\begin{align*}
-\log W_i     &= \eta X_i + Z_i + u_i  \\
-\log R_i     &= \delta_0 + \log(W_i) + \delta Z_i + \xi_i \\
-\log \beta_i &= X_i +\epsilon_i +  a \xi_i   \\
-\end{align*}
+\log W_i = \eta X_i + Z_i + u_i  \\
+\log R_i= \delta_0 + \log(W_i) + \delta Z_i + \xi_i \\
+\log \beta_i = X_i +\epsilon_i +  a \xi_i   
 $$
 
 and finally $(X_i,Z_i,\epsilon_i,u_i,\xi_i)$ are independent normal draws. Given all of this we can simulate our data. 
@@ -57,8 +56,8 @@ The code below simulates the data when $a=0$ and when $a=1$
 ```{r, results='hide'}
 
 library(data.table)
-  sim_data <- function(a_val = 0){
-  p  = list(gamma = 0.8,beta=1,a=a_val,rho=1,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
+  sim_data <- function(a_val = 0, rho_val = 1, u_ind = 0){
+  p  = list(gamma = 0.8,beta=1,a=a_val,rho=rho_val,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
   N=10000  # size of the simulation
   simdata0 = data.table(i=1:N,X=rnorm(N))
   
@@ -72,7 +71,7 @@ library(data.table)
   simdata0[,lr := lw + p$delta0+ p$delta*Z + xi]; # log home productivity
   
   simdata0[,eps:=rnorm(N)*0.2]
-  simdata0[,beta := exp(p$nu*X  + p$a*xi + eps)]; # heterogenous beta coefficient
+  simdata0[,beta := exp(p$nu*X  + p$a*xi + eps + u_ind*0.2*u)]; # heterogenous beta coefficient
   
   # compute decision variables
   simdata0[, lfp := log(p$rho) + lw >= lr] # labor force participation
@@ -106,18 +105,11 @@ Intution behind why having $a=1$ we overestimate the value of $\gamma$:
 - Then in the working population, we are left with individuals who will work more hours at a given wage. This leads us to overestimate the effect of wages on labor supply. 
 - We are thus left with a higher value of $\gamma$ - and consistent with the result from the regression - a lower value of $1/ \gamma$. 
 
-<!-- - If we assume there is no relationship between R and Beta then we are believing the people in our sample have some beta. 
-- Because the people we observe are the people with smallers R's this must mean that these people also have smaller Beta's 
-- Us believing that this people should have higher beta's than they actually do, leads to us overestimating the value of gamma. 
-
-(I am gonna ask lamadon about this in office hours. )
-(also the intercept) -->
-
 ## Heckman correction
 
 As we have seen in class, Heckman (74) offers a way for us to correct the our regression in order to recover our structural parameters. 
 
-As we have seen in class, we need to understand how the error term in the hour regression correlates with the laborparticipation decision. 
+As we have seen in class, we need to understand how the error term in the hour regression correlates with the labor participation decision. 
 
 #### Problem 4 
 
@@ -131,91 +123,45 @@ We know that $\epsilon_i$ and $\xi_i$ are jointly normal so we know $E[\epsilon 
 $$
 a + bE[\xi_i | \xi_i < log(p) - \delta_0 - \delta Z_i] + 0 
 $$
-Now we can construct the inverse mills ratio and incorporate that term in our regression to get rid of our endogenity issue. 
+Now we can construct the inverse mills ratio and incorporate that term in our regression to get rid of our endogenity issue (from selection into labor force). 
 
-When we regress labor force particpation on $z_i$ we will find our coefficient2 $\beta_0 = \frac{log(\rho) - \delta_0}{\sigma_{\xi}}$ and $\beta_1 = \frac{\delta}{\sigma_{\xi}}$. Our Inverse Mills ratio can be seen below. 
+When we regress labor force particpation on $z_i$ we will find our coefficients $\beta_0 = \frac{log(\rho) - \delta_0}{\sigma_{\xi}}$ and $\beta_1 = \frac{\delta}{\sigma_{\xi}}$. Our inverse Mills ratio can be seen below. 
 
 $$ 
-
 a - \frac{\sigma_{\xi} \phi( \frac{log(p) - \delta_0 - \delta Z_i}{\sigma_{\xi}})}{\Phi ( \frac{log(p) - \delta_0 - \delta Z_i}{\sigma_{\xi}})}
 $$ 
-When we add our inverse mills ratio into our regression we will do so by doing a probit of particpation on $Z_i$. We will call the two variables we recover from this regression as $\beta_0$ and $\beta_1$. When we add a term to our regression to account for this endogenity we will construct it as follows. 
+To recover the parameters we need for the ratio, we run a probit regression of particpation on $Z_i$. We will call the two variables we recover from this regression as $\beta_0$ and $\beta_1$. When we add a term to our regression to account for this endogenity we will construct it as follows: 
 
 $$
 \frac{\phi(\beta_0 + \beta_1 * Z_i)}{\Phi(\beta_0 + \beta_1 * Z_i)}
 $$
 
-We will now run our regression with this additional term included in the regression. 
+We will now run our regression with this additional term included in the regression:
 
 ```{r}
 fit2 = glm(lfp ~ Z,simdata1,family = binomial(link = "probit"))
+
 Betas = summary(fit2)
 B_0 = Betas$coefficients[1,1]
 B_1 = Betas$coefficients[2,1]
 
 simdata0[,lambda_i := pnorm(B_0 + B_1 * Z) / dnorm(B_0 + B_1 * Z)]
 
-heck <- lm(log(h) ~ lw + X + lambda_i , data=simdata0)
-summary(heck)
-
-
-
-
+mills <- lm(log(h) ~ lw + X + lambda_i , data=simdata0)
+summary(mills)
 ```
 
-####Problem 5 
+#### Problem 5 
 
-If we run the regression no including the variable we constructed above we get a coefficient on log wage of 1.248. We have now by including the inverse mills ration in our regression recovered the correct estiamte for $\gamma$ even in the case where $a\neq 0$.
+If we run the regression no including the variable we constructed above we get a coefficient on log wage of `r summary(mills)$coefficients[2,1]`. By including the inverse mills ratio in our regression (controlling for selection), we have now recovered the correct estiamte for $\gamma$ even in the case where $a\neq 0$.
 
 ## Repeated cross-section
 
 In the code below we just create two new samples, one where $\rho = 1$ and one where $\rho =1.2$. We have added the wage residual $u_i$ inside the expression for $\beta_i$. 
 
 ```{r}
-p  = list(gamma = 0.8,beta=1,a=0,rho=1,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
-N=10000  # size of the simulation
-simdatac1 = data.table(i=1:N,X=rnorm(N))
-
-# simulating variables
-simdatac1[,X := rnorm(N)]
-simdatac1[,Z := rnorm(N)]
-simdatac1[,u := rnorm(N)]
-simdatac1[,lw := p$eta*X  + Z + 0.2*u ]  # log wage
-
-simdatac1[,xi := rnorm(N)*0.2]
-simdatac1[,lr := lw + p$delta0+ p$delta*Z + xi]; # log home productivity
-
-simdatac1[,eps:=rnorm(N)*0.2]
-simdatac1[,beta := exp(p$nu*X  + p$a*xi + eps + 0.2*u)]; # heterogenous beta coefficient
-
-# compute decision variables
-simdatac1[, lfp := log(p$rho) + lw >= lr] # labor force participation
-simdatac1[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
-simdatac1[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
-simdatac1[,mean(lfp)]
-
-p  = list(gamma = 0.8,beta=1,a=0,rho=1.2,eta=0.2,delta=-0.2,delta0=-0.1,nu=0.5) # parameters
-N=10000  # size of the simulation
-simdatac2 = data.table(i=1:N,X=rnorm(N))
-
-# simulating variables
-simdatac2[,X := rnorm(N)]
-simdatac2[,Z := rnorm(N)]
-simdatac2[,u := rnorm(N)]
-simdatac2[,lw := p$eta*X  + Z + 0.2*u ]  # log wage
-
-simdatac2[,xi := rnorm(N)*0.2]
-simdatac2[,lr := lw + p$delta0+ p$delta*Z + xi]; # log home productivity
-
-simdatac2[,eps:=rnorm(N)*0.2]
-simdatac2[,beta := exp(p$nu*X  + p$a*xi + eps + 0.2*u)]; # heterogenous beta coefficient
-
-# compute decision variables
-simdatac2[, lfp := log(p$rho) + lw >= lr] # labor force participation
-simdatac2[, h   := (p$rho * exp(lw)/beta)^(1/p$gamma)] # hours
-simdatac2[lfp==FALSE,h:=NA][lfp==FALSE,lw:=NA]
-simdatac2[,mean(lfp)]
-
+simdatac1 = sim_data(a_val = 0, rho_val = 1, u_ind = 1)
+simdatac2 = sim_data(a_val = 0, rho_val = 1.2, u_ind = 1)
 ```
 
 
@@ -239,15 +185,15 @@ simdatac2[,lambda_i := pnorm(B_02 + B_12 * Z) / dnorm(B_02 + B_12 * Z)]
 ```
 
 ####Problem 6 
-- our intercept terms are super different but our coefficient on Z is the same. 
-- In the previous construction we had included $log(\rho)$ but $\rho=1$ so $log(rho) = 0$. Now with a diffent value of rho this will actually affect our $\beta_0$. We this in the difference in our values. 1.417 vs 0.48. 
+<!-- Come back to this one --> 
+Changing $\rho$ changes the returns to working, so the trade-off between joining and not joining the labor force is different for different values of $\rho$. In particular, increasing $\rho = 1.2$ increases our labor force participation by almost $20\%$. Now the agents are selecting into the labor force at a different margin, so the mills ratio is different.
+
+In particular, when we regress labor force participation on characteristics $Z_i$, we note that the coefficient on $Z_i$ is the same, but the intercept is now higher. This makes sense - as people for every level of $Z_i$ are now more likely to work.
 
 #### Problem 7 
-What we need to do in code, 
-- first break into seperate groups based on values of x 
-- then mean those groups 
-- then do differences over time 
-- then regress using those variables 
+For this problem, we want to estimate the true $\gamma$ despite the endogeneity issue between wage and disutility of labor (caused by adding the wage residual to our regression with $\beta_i$). To do this, we look at cohorts across two time periods - the time periods are given by distinct simulations and cohorts are created by grouping over values of $X_i$ (we take the mean of the attributes of interest).
+
+Now using each cohort as an observation and differenced averages as variables, we attempt to recover the $\gamma$ from our model. 
 
 ```{r}
 meangp1 = data.table(n=1:70, avg_wage = 0, avg_hour = 0, avg_lam = 0, avg_x = 0)
@@ -256,8 +202,22 @@ meangp2 = data.table(n=1:70, avg_wage = 0, avg_hour = 0, avg_lam = 0, avg_x = 0)
 for (i in -34:35) {
   splitup = i * 1/15
   splitlow = splitup - (1/15)
-  meangp1[i + 35] = simdatac1 %>% filter(lfp == TRUE) %>% filter(between(X, splitlow, splitup)) %>% summarise(n = n(), avg_wage = mean(lw), avg_hour = mean(h), avg_lam = mean(lambda_i), avg_x = mean(X))
-   meangp2[i + 35] = simdatac2 %>% filter(lfp == TRUE) %>% filter(between(X, splitlow, splitup)) %>% summarise(n = n(), avg_wage = mean(lw), avg_hour = mean(h), avg_lam = mean(lambda_i), avg_x = mean(X))
+  meangp1[i + 35] = simdatac1 %>% 
+    filter(lfp == TRUE) %>% 
+    filter(between(X, splitlow, splitup)) %>% 
+    summarise(n = n()
+              , avg_wage = mean(lw)
+              , avg_hour = mean(h)
+              , avg_lam = mean(lambda_i)
+              , avg_x = mean(X))
+   meangp2[i + 35] = simdatac2 %>% 
+     filter(lfp == TRUE) %>% 
+     filter(between(X, splitlow, splitup)) %>% 
+     summarise(n = n()
+               , avg_wage = mean(lw)
+               , avg_hour = mean(h)
+               , avg_lam = mean(lambda_i)
+               , avg_x = mean(X))
 }
    
 ```
@@ -277,16 +237,8 @@ summary(RCS)
   
 ```
 
-Recovering gamma was influenced immensly by how i grouped the X's. It varied all over the place. I messed with number of intervals and size of intervals until I got a value that was close to correct. Not sure this is really a sound practice. 
+It should be noted that the estimated $\gamma$ was extremely sensitive to the grouping of the $X_i$'s. With various groupings, we could recover a whole range of possible $\gamma$'s. By changing both the number and size of intervals, we were able to recover an estimate close to the true value. This demonstrates that our estimate is not robust to changes to our bin sizes. 
 
-I simulated the data a bunch of different times with the above construction and it comes pretty close everytime, so I feel pretty good about the above construction. The above construction has 70 different groups each a different interval of x from -2.33 to 2.33 of size .0666. 
-
-The way I decided to the grouping also leaves out the x's with values more extreme or less extreme than those intervals. 
-
-
-
-
-
-
+That said, using the above construction, the simulations usually returned a $\gamma$ close to the true $0.8$. The above construction partitions the $X_i$'s ranging from $-2.33$ to $2.33$ with bins of size $.0667$. Note that this leaves out the most extreme values of $X_i$. 
 
 
