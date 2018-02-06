@@ -28,13 +28,11 @@ library(plm)
 
 ```
 
-## Question 1
-## Question 2
 
 ## Question 3
 ```{r}
 
-data = read.dta13("~/Documents/econ21130-w18/CPS_2012_micro.dta") 
+data = read.dta13("CPS_2012_micro.dta") 
 data = data.table(data)
 data$age = as.numeric(data$age)
 
@@ -42,13 +40,12 @@ data$age = as.numeric(data$age)
 set.seed(60356548) 
 data <- data[,fp := runif(1)>0.5, by=statefip]
 fit1 = lm(lnwage ~ fp, data)
-htmlreg(fit1,single.row=TRUE)
 summary(fit1)
 
 # Generating IID data
 var_est = var(data$lnwage)
 
-coefs = data.table(n = 1:500, val = 0)
+coefs = data.table(n = 1:500, val = NA)
 
 for (i in 1:500){
   datai = data[, y2 := rnorm(.N)*var_est]
@@ -63,18 +60,119 @@ nsig = 500 - sum(is.na(coefs$val))
 
 # False rejection rate
 nsig / 500
+```
 
+### todo: write some shit about this
+
+#### Question 4 
+
+
+We are currently finding that everything is significant, we think this is because our value of n is so large that are std error is small. We do find the the heterskedastic assumption deceseases our std error and this make it so we get smaller numbers and are more significant. Ask lamadon in class tomorrow 
+
+```{r}
 # Heteroskedasticity:
-fit2 = lm(y2 ~ fp, data)
-covmat = vcovHC(fit1, type = "const"); covmat
-covmat1 = vcovHC(fit1, type = "HC0"); covmat1
 
-covmat2 = vcovHC(fit2, type = "const"); covmat2
-covmat3 = vcovHC(fit2, type = "HC0"); covmat3
+fitht = lm(lnwage ~ yrseduc + age + I(age^2) , data=data)
 
-coeftest(fit1, vcov. = covmat)
+data <- data[,sqrs := (fitht$residuals)^2 ]
+
+fithtr = lm(sqrs ~ yrseduc + age + I(age^2) , data=data)
+data <- data[,s := predict(fithtr)]
+data <- data[,pred := predict(fitht)]
+
+
+sighom = 0 
+sighet = 0 
+for (i in 1:500) { 
+  data <- data[,fw := rnorm(.N) * s + pred]
+   reg = lm(fw ~ fp, data)
+   covmat = vcovHC(reg, type = "const")
+   c = coeftest(reg, vcov. = covmat)
+   if (c[2,4] <= 0.05) { 
+     sighom = sighom + 1
+     } 
+   covmat1 = vcovHC(reg, type = "HC0")
+   c1 = coeftest(reg, vcov. = covmat1)
+   if (c1[2,4] <= 0.05) { 
+     sighet = sighet + 1
+     } 
+}
+
 
 ```
+
+#### Question 5 
+
+For this data-generating process, we only draw the first individual of the sample under iid conditions. The subsequent draws have values that depend on the previous draw - in particular, the pairwise correlation between two consecutive draws should be the $\rho$ parameter specified by the DGP. 
+
+In this case, we have that the first value $r_1$ is drawn from a standard normal distribution. The next draw is also from a standard normal, but we add the product of the first draw and correlation $\rho \in [0,1]$. Higher values of $\rho$ correspond to higher within-group correlation. In particular, for $i \geq 2$:
+
+$$r_i = \rho \cdot r_{i-1} + \epsilon_{i}$$ for $\epsilon_i \sim N(0,1)$ and $\epsilon_i \perp \epsilon_j, \epsilon_i \perp r_{i-1}$ when $i \neq j$ 
+
+This ensures that $Corr(r_i, r_{i-1}) = Corr(r_i, \rho r_i + \epsilon_i) = \rho \sigma_r = \rho$ since $\sigma_r = 1$
+
+#### Question 6 
+```{r}
+
+fit0  = lm(lnwage ~ yrseduc + age + I(age^2), data)
+data <- data[,yhat := predict(fit0)]
+
+rho_vect = c(0.7, 0.8, 0.9)
+rho_sig = c(0,0,0)
+for (j in 1:length(rho_vect)){
+  rho = rho_vect[j]
+  
+  for (i in 1:500){
+      
+    data <- data[, res_hat := {
+    r = rep(0,.N)
+    r[1] = rnorm(1)
+    for (i in 2:.N) {
+      r[i] = rho*r[i-1] + rnorm(1)
+    }
+    r
+  },statefip]
+    data <- data[,y2:= yhat + res_hat]
+    data <- data[,fp := runif(1)>0.5, statefip]
+    fitn = lm(y2 ~ fp + yrseduc + age + I(age^2),data)
+   if ( summary(fitn)$coef[2,4] <= 0.05) { 
+     rho_sig[j] = rho_sig[j] + 1 
+     } 
+     
+     
+    
+
+
+}
+}
+
+
+```
+
+#### Question 7 
+
+
+```{r}
+states = unique(data$statefip)
+samp = sample(states, 51, replace = TRUE)
+samp = as.character(samp)
+newdf = data.frame(matrix(ncol=length(data)))
+colnames(newdf)= colnames(data)
+f = list(newdf)
+
+for (state in samp){
+   c = data[data[, statefip == state]]
+  x<- list.append(f, c)
+   
+}
+stranddata = rbindlist(f, use.names = TRUE)
+
+```
+
+
+
+
+
 
 
 
