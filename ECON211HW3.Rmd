@@ -138,10 +138,6 @@ for (j in 1:length(rho_vect)){
    if ( summary(fitn)$coef[2,4] <= 0.05) { 
      rho_sig[j] = rho_sig[j] + 1 
      } 
-     
-     
-    
-
 
 }
 }
@@ -154,25 +150,34 @@ for (j in 1:length(rho_vect)){
 
 ```{r}
 states = unique(data$statefip)
-samp = sample(states, 51, replace = TRUE)
-samp = as.character(samp)
-newdf = data.frame(matrix(ncol=length(data)))
-colnames(newdf)= colnames(data)
-f = list(newdf)
 
-for (state in samp){
-   c = data[data[, statefip == state]]
-  x<- list.append(f, c)
-   
+coefs = list()
+
+for (i in 1:500) {
+  samp = sample(states, 51, replace = TRUE)
+  samp = as.character(samp)
+  newdf = data.frame(matrix(ncol=length(data)))
+  colnames(newdf)= colnames(data)
+  f = list(newdf)
+  
+  for (state in samp){
+     c = data[data[, statefip == state]]
+    f<- list.append(f, c)
+     
+  }
+  stranddata = rbindlist(f, use.names = TRUE)
+  
+  fitboot = lm(lnwage ~fp,stranddata)
+  coefs<- list.append(coefs, summary(fitboot)$coef[2,1])
 }
-stranddata = rbindlist(f, use.names = TRUE)
+quantile(unlist(coefs), c(.05, .95))
 
 ```
 
 
+### why does the fact the we redraw the states get rid of the effect 
 
 
-
-
+#### ask him about why this gets rid of significance 
 
 
