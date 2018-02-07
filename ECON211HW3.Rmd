@@ -1,79 +1,82 @@
 ---
 title: "Homework on Inference"
 output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
   html_document:
     toc: yes
     toc_depth: 3
     toc_float:
       collapsed: no
       smooth_scroll: no
-  pdf_document:
-    toc: yes
-    toc_depth: '3'
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
-require(kableExtra)
-require(ggplot2)
-require(texreg)
+install.packages("kableExtra")
+library(kableExtra)
+library(ggplot2)
 library(texreg)
-require(readstata13) #to install, run install.packages("readstata13")
-require(sandwich)
+library(readstata13)
+library(sandwich)
 options(knitr.table.format = "html") 
 library(data.table)
 library(plm)
-
-
+library(lmtest)
+library(rlist)
 ```
 
 
-## Question 3
-```{r}
+## Question 3 - IID Errors
+For this question, we use CPS data from 2012 and generate a fictitious policy at the state-level by sampling from a uniform distribution. The variable `fp` is True with probability 0.5 and False with probability 0.5. 
 
-data = read.dta13("CPS_2012_micro.dta") 
-data = data.table(data)
+
+```{r}
+data = data.table(read.dta13("CPS_2012_micro.dta"))
 data$age = as.numeric(data$age)
 
 # Fake policy:
 set.seed(60356548) 
 data <- data[,fp := runif(1)>0.5, by=statefip]
 fit1 = lm(lnwage ~ fp, data)
-summary(fit1)
 
-# Generating IID data
+summary(fit1)
+b = summary(fit1)$coef[2,1]
+b_p = summary(fit1)$coef[2,4]
+```
+
+When regressing wage on this fictitious policy, we see that there is a significant coefficient on `fp` despite having randomly assigned `fp` at the state-level. We report an estimate of `r b` with a p-value of `r b_p`, meaning it is significant at the $0.05$ level. 
+
+```{r}
+# Generating IID data:
 var_est = var(data$lnwage)
 
-coefs = data.table(n = 1:500, val = NA)
-
+nsig = 0
 for (i in 1:500){
   datai = data[, y2 := rnorm(.N)*var_est]
   reg = lm(y2 ~ fp, data)
   if (summary(reg)$coef[2,4] <= 0.05){
-    coefs[i, "val"] = summary(reg)$coef[2,2]
+    nsig = nsig + 1
   }
 }
 
-# Number of significant coefficients:
-nsig = 500 - sum(is.na(coefs$val))
-
-# False rejection rate
-nsig / 500
+rej_rate = nsig/500
 ```
 
-### todo: write some shit about this
+To see what's going on, we generate i.i.d. data (it should be noted that this new variable `y2` is i.i.d. at the individual level) from a normal with the same (estimated) variance as our original sample. We then run regressions and see that our rejection rate is `r rej_rate`, which is close to $0.05$. This tells us that we reject the null only about $5\%$ of the time, which is to be expected at the significance level cutoff we chose. 
 
-#### Question 4 
+#### Question 4 - Heteroskedastic Errors
 
+We now want to calculate heteroskedastic robust standard errors, meaning we pick a set of covariates over which variance can vary. In this problem, we follow the example given and choose years of education, age, and squared age for the covariates of interest. 
 
-We are currently finding that everything is significant, we think this is because our value of n is so large that are std error is small. We do find the the heterskedastic assumption deceseases our std error and this make it so we get smaller numbers and are more significant. Ask lamadon in class tomorrow 
+We obtain the squared residuals from the regression of wage on selected covariates and then regress squiared residuals on the same covariates to get predicted variances as a function of the covariates. We then generate our data by scaling the random noise by predicated variance and adding it to predicted levels of wage. 
+
+<!-- We are currently finding that everything is significant, we think this is because our value of n is so large that are std error is small. We do find the the heterskedastic assumption deceseases our std error and this make it so we get smaller numbers and are more significant. Ask lamadon in class tomorrow -->
 
 ```{r}
 # Heteroskedasticity:
-
 fitht = lm(lnwage ~ yrseduc + age + I(age^2) , data=data)
-
 data <- data[,sqrs := (fitht$residuals)^2 ]
 
 fithtr = lm(sqrs ~ yrseduc + age + I(age^2) , data=data)
@@ -81,13 +84,16 @@ data <- data[,s := predict(fithtr)]
 data <- data[,pred := predict(fitht)]
 
 
-sighom = 0 
-sighet = 0 
+coefs = data.frame(j = 1:500, hom_se = NA, het_se = NA)
+sighom = 0
+sighet = 0
+
 for (i in 1:500) { 
   data <- data[,fw := rnorm(.N) * s + pred]
    reg = lm(fw ~ fp, data)
    covmat = vcovHC(reg, type = "const")
    c = coeftest(reg, vcov. = covmat)
+   coefs[i, "hom_se"] = c[2,4]
    if (c[2,4] <= 0.05) { 
      sighom = sighom + 1
      } 
@@ -95,13 +101,21 @@ for (i in 1:500) {
    c1 = coeftest(reg, vcov. = covmat1)
    if (c1[2,4] <= 0.05) { 
      sighet = sighet + 1
-     } 
+   } 
+  coefs[i, "het_se"] = c1[2,4]
 }
 
+rej_rate_hom = sighom/500
+rej_rate_het = sighet/500
 
 ```
 
-#### Question 5 
+<!-- analyze the significance 
+
+
+finish writing once code runs --> 
+
+#### Question 5 - State Clustered Errors (DGP)
 
 For this data-generating process, we only draw the first individual of the sample under iid conditions. The subsequent draws have values that depend on the previous draw - in particular, the pairwise correlation between two consecutive draws should be the $\rho$ parameter specified by the DGP. 
 
@@ -111,19 +125,21 @@ $$r_i = \rho \cdot r_{i-1} + \epsilon_{i}$$ for $\epsilon_i \sim N(0,1)$ and $\e
 
 This ensures that $Corr(r_i, r_{i-1}) = Corr(r_i, \rho r_i + \epsilon_i) = \rho \sigma_r = \rho$ since $\sigma_r = 1$
 
-#### Question 6 
-```{r}
+#### Question 6 - State Clustered Errors (Within-State Correlation)
 
+Now we wantto find and interpret the difference in our results as we vary $\rho$, the within-state correlation of individuals. 
+
+```{r}
 fit0  = lm(lnwage ~ yrseduc + age + I(age^2), data)
 data <- data[,yhat := predict(fit0)]
 
 rho_vect = c(0.7, 0.8, 0.9)
 rho_sig = c(0,0,0)
+
 for (j in 1:length(rho_vect)){
   rho = rho_vect[j]
   
   for (i in 1:500){
-      
     data <- data[, res_hat := {
     r = rep(0,.N)
     r[1] = rnorm(1)
@@ -141,17 +157,18 @@ for (j in 1:length(rho_vect)){
 
 }
 }
-
-
 ```
 
-#### Question 7 
+We see that the number of significant coefficients we find is increasing in $\rho$. This makes sense, as $\rho$ is the parameter that toggles how individuals correlate within each state (by construction) and the significance of the coefficient on `fp` is being driven by this within-state correlation. 
 
+In other words, as $\rho$ increases, the probability of detecting a (falsely) "significant" result is higher, despite a independent variable that we know should have no effect on the outcome variable. 
+
+#### Question 7 
+Another way to account for within-state correlation would be to resample the data. We follow the standard bootstrapping procedure and draw at the state-level. Doing so preserves the correlation within each state, so that when we eventually run the regression at the individual-level, we recover the results we want. 
 
 ```{r}
 states = unique(data$statefip)
-
-coefs = list()
+coef = list()
 
 for (i in 1:500) {
   samp = sample(states, 51, replace = TRUE)
@@ -168,16 +185,13 @@ for (i in 1:500) {
   stranddata = rbindlist(f, use.names = TRUE)
   
   fitboot = lm(lnwage ~fp,stranddata)
-  coefs<- list.append(coefs, summary(fitboot)$coef[2,1])
+  coef<- list.append(coef, summary(fitboot)$coef[2,1])
 }
-quantile(unlist(coefs), c(.05, .95))
+quantile(unlist(coef), c(.05, .95))
 
 ```
 
+Our constructed confidence interval contains 0 at the $10\%$ significance level. As we stated above, drawing at the state level respects the correlation structure within the state. So when we are sampling at the state-level, we get rid of the within-state individual-level correlation that was driving the significance of our coefficients.
 
-### why does the fact the we redraw the states get rid of the effect 
-
-
-#### ask him about why this gets rid of significance 
-
+<!-- might be good to explain this more carefully; i'm not sure i completely understand why drawing at the state level gets rid of the effect we see in fp -->
 
