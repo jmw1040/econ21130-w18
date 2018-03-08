@@ -1,5 +1,5 @@
 ---
-title: "Homework on Inference"
+title: "Homework on Inference - Judah Newman and Jenny Wang"
 output:
   html_document:
     toc: yes
@@ -71,7 +71,6 @@ We now want to calculate heteroskedastic robust standard errors, meaning we pick
 
 We obtain the squared residuals from the regression of wage on selected covariates and then regress squiared residuals on the same covariates to get predicted variances as a function of the covariates. We then generate our data by scaling the random noise by predicated variance and adding it to predicted levels of wage. 
 
-<!-- We are currently finding that everything is significant, we think this is because our value of n is so large that are std error is small. We do find the the heterskedastic assumption deceseases our std error and this make it so we get smaller numbers and are more significant. Ask lamadon in class tomorrow -->
 
 ```{r}
 # Heteroskedasticity:
@@ -109,10 +108,7 @@ rej_rate_het = sighet/500
 
 ```
 
-<!-- analyze the significance 
-
-
-finish writing once code runs --> 
+Once we obtain the results, thre are a few key things to note. First of all, we are find that almost every coefficient is significant - presumably because the sample size $n$ is so large that the standard errors rapidly approach $0$. Secondly, we find that the heterskedastic assumption on variance deceseases our standard errors, which gives us even more extreme p-values. This is (maybe) unusual, but it is plausible that there may not be heteroskedastic errors across our chosen covariates. 
 
 #### Question 5 - State Clustered Errors (DGP)
 
@@ -191,6 +187,3 @@ quantile(unlist(coef), c(.05, .95))
 ```
 
 Our constructed confidence interval contains 0 at the $10\%$ significance level. As we stated above, drawing at the state level respects the correlation structure within the state. So when we are sampling at the state-level, we get rid of the within-state individual-level correlation that was driving the significance of our coefficients.
-
-<!-- might be good to explain this more carefully; i'm not sure i completely understand why drawing at the state level gets rid of the effect we see in fp -->
-
