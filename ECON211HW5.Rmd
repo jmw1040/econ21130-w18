@@ -1,0 +1,45 @@
+---
+title: "Homework on unobserved hetereogeneity"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(kableExtra)
+library(ggplot2)
+library(texreg)
+library(readstata13)
+library(sandwich)
+options(knitr.table.format = "html") 
+library(data.table)
+library(plm)
+library(lmtest)
+library(rlist)
+```
+
+# A Simple Model 
+### Question 1 
+### Question 2
+#Simulating data 
+
+# Estimating 
+### Question Three 
+### Question Four 
+# Random Effect 
+### Question 5 
+### Question 6 
+### Question 7  
+# Fixed Effect 
+### Question 8 
+### Question 9 
+
+
