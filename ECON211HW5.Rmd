@@ -89,46 +89,46 @@ data[, D := rexp(p$n, rate = Lb)]
 ```
 
 ```{r}
-lik.homo.i = function(W, D, pk, a, gamma){
-  lambda = lam(a, gamma, .9, W, 0)
+lik.homo.i = function(W, D, p1, p2, p3, a1, a2, a3, gamma){
+  lambda1 = lam(a1, gamma, .9, W, 0)
+  lambda2 = lam(a2, gamma, .9, W, 0)
+  lambda3 = lam(a3, gamma, .9, W, 0)
+  lambda = c(lambda1, lambda2, lambda3)
+  pk = c(p1, p2, p3)
   return(sum(pk * lambda * exp(-lambda * D)))
 }
 
-lik.homo.k = function(W, D, pk, a, gamma) { 
-  i_s = mapply(lik.homo.i, W, D, MoreArgs = list(pk = pk, a = a, gamma = gamma))
+lik.homo.k = function( p1, p2, p3, a1, a2, a3, gamma, W, D) { 
+  i_s = mapply(lik.homo.i, W, D, MoreArgs = list(p1 = p1,p2 = p2,p3 = p3, a1 = a1, a2 = a2, a3 = a3, gamma = gamma))
   return(sum(log(i_s)))
 }
 
-lik.homo.k(data$W,data$D, p$pk, p$a, p$gamma)
+lik.homo.k( p$pk[1], p$pk[2], p$pk[3], p$a[1], p$a[2] , p$a[3] ,p$gamma, data$W,data$D)
 
-g = seq(1, 1.8, .1)
-a1 = seq(.8, 1.3, .1)
-a2 = seq(2.8, 3.3, .1)
-a3 = seq(4.8, 5.3, .1)
-p1 = seq(0, 1, .1)
-p2 = seq(0, 1, .1)
+g = seq(1, 2, .1)
+a1 = seq(.8, 1.2, .1)
+a2 = seq(2.8, 3.2, .1)
+a3 = seq(4.8, 5.2, .1)
+p1 = seq(0, .3, .1)
+p2 = seq(.3, .6, .1)
 grid = expand.grid(g, a1, a2, a3, p1, p2)
 colnames(grid) <- c("g", "a1", "a2", "a3", "p1", "p2")
 grid['p3'] = 1 - grid$p1 - grid$p2 
-grid = grid %>%
-    filter(p3 >= 0)
+
+grid = as.data.frame(grid)
+
+
+grid = grid[grid$p3 >= 0,]
+
 
 maxlik = function(grid, W, D){
-  # likely = mapply(lik.homo.k, W, D, cbind(p1, p2, p3), cbind(a1, a2, a3), g)
-  # return(lik.homo.k(W, D, cbind(p1,p2,p3), cbind(a1, a2,a3), g))
   likely = rep(0, nrow(grid))
+  likely = mapply(lik.homo.k, grid$p1, grid$p2, grid$p3, grid$a1, grid$a2, grid$a3, grid$g, MoreArgs = list(W, D))
+  return(grid[which.max(likely),])
   
-  for (i in 1:nrow(grid)){
-    pk = cbind(grid$p1[i], grid$p2[i], grid$p3[i])
-    ak = cbind(grid$a1[i], grid$a2[i], grid$a3[i])
-    likely[i] = lik.homo.k(W, D, pk, ak, grid$g[i])
   }
 
-  ind = which.min(likely)
-  return(grid[ind, ])
-  }
-
-t = maxlik(grid[sample(nrow(grid), 1000),], data$W, data$D); t
+t = maxlik(grid, data$W, data$D); t
 
   
 ```
@@ -137,9 +137,65 @@ t = maxlik(grid[sample(nrow(grid), 1000),], data$W, data$D); t
 ### Question 6 
 ``` {r EM_whatever}
 # Do we need to recover the pks??
-e_step <- function(g0, W, D){
-  
+e_step_i <- function(g0, pk, ak, w_i, d_i){
+  lambda = lam(ak, g0, rho=0.9, w_i, B=0)
+  prob = exp(-lambda * d_i) * lambda
+  return(prob * pk / sum(prob * pk))
 }
+
+e_step <- function(g0, pk, ak, W, D){
+  pks = mapply(e_step_i, w_i = W, d_i= D, MoreArgs = list(g0 = g0, pk = pk, ak = ak))
+  pks = t(pks)
+  return(pks)
+}
+
+likelihood_i <- function(g0, pk, ak, w_i, d_i, q1, q2, q3 ) { 
+  lambda = lam(ak, g0, rho=0.9, w_i, B=0)
+  prob = exp(-lambda * d_i) * lambda
+  q_i = cbind(q1, q2, q3)
+  val = sum(q_i * log(prob) * pk)
+  return(val)
+}
+
+likelihood <- function(g0, pk, ak, W, D, Q) { 
+  val = mapply(likelihood_i, w_i = W, d_i = D, q1 = Q[,1], q2 = Q[,2], q3 = Q[,3], MoreArgs = list(g0 = g0, pk = pk, ak = ak))
+  return(sum(val))
+}
+
+mstep_k <- function( g0, D, W, Q_k, rho = 0.9, B= 0){ 
+  return(mean(Q_k * (rho* W - B) * (D ^ (1+g0)) ))
+}
+
+mstep <- function(g0, D, W, Q, rho = 0.9, B= 0) { 
+  Q_1 = Q[,1]
+  Q_2 = Q[,2]
+  Q_3 = Q[,3]
+  return (c( mstep_k(g0, D, W, Q_1), mstep_k(g0, D, W, Q_2), mstep_k(g0, D, W, Q_3)))
+  }
+
+
+pf = c(.1, .4, .5)
+a = c(2, 4, 6) 
+
+for (i in 1:20) { 
+  Q = e_step(p$gamma, pf,a, data$W, data$D)
+  lik = likelihood(p$gamma, pf,a,  data$W, data$D, Q)
+  print(lik)
+  val = mstep(p$gamma, data$D, data$W, Q)
+  pf  = val
+  a = c( mean(Q[,1]), mean(Q[,2]), mean(Q[,3]))
+  print(pf)
+  print(a)
+
+}
+
+p = list(rho=0.9, a = c(1,3,5), gamma =1.5, pk = c(0.2,0.5,0.3))
+
+  
+
+# basically we need to compute the posterior probability of being in a group given the data 
+#so in the e step we compute the pks 
+#then in the m step we compute the aks 
 
 ```
 
@@ -158,9 +214,9 @@ data[, Lb := ((p$rho*W - B)/a)^(1/(1+p$gamma))]
 data[, Lb := pmin(pmax(Lb,0),1)] # bound it between 0 and 1
 data[, D := rexp(p$n, rate = Lb)]
 
-best_ai <- function(w_i, D, g, B = 0, rho = p$rho){
+best_ais <- function(W, D, g, B = 0, rho = p$rho){
   # check this - we average over all D? but W_i is individual-specific?
-  return((rho * w_i - B)*((mean(D))^(1+g)))
+  return((rho * W - B)*((D))^(1+g)))
 }
 
 likelihood_g <- function(g, W, D, B = 0, rho = p$rho){
