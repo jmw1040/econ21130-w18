@@ -32,6 +32,8 @@ library(rlist)
 #Simulating data 
 
 ```{r}
+
+#Here we just simulate data, code taken from the problem set 
 p = list(rho=0.9,a = 3, gamma =1.5)
 p$n = 1000
 data = data.table(B = 0, W = exp(rnorm(p$n) -3))
@@ -50,13 +52,15 @@ ggplot(data,aes(x=W,y=Lb)) + geom_line() + theme_bw()
 ### Question Three 
 
 ```{r}
-lam = function(a, gamma, rho=0.9, W, B=0) {((rho*W - B) / a)^(1/(1+gamma))}
+lam = function(a, gamma, rho=0.9, W, B=0) {((rho*W - B) / a)^(1/(1+gamma))} # function to calculate lambda given in puts
 
+#we create a grid of different values for a and gamma 
 a = seq(2.5, 3.5, .001)
 g = seq(1, 2, .001)
 grid = expand.grid(a,g)
 
-
+# we calculate the likely hood over the grid of lambda and a and then return the vale of a and gamma that maximize 
+# our likelihood 
 lik.homo = function(W, D, grid) {
   n = length(W)
   a = grid["Var1"]  
@@ -89,6 +93,7 @@ data[, D := rexp(p$n, rate = Lb)]
 ```
 
 ```{r}
+# here we calculate the likelihood for a given person given inputs 
 lik.homo.i = function(W, D, p1, p2, p3, a1, a2, a3, gamma){
   lambda1 = lam(a1, gamma, .9, W, 0)
   lambda2 = lam(a2, gamma, .9, W, 0)
@@ -98,13 +103,16 @@ lik.homo.i = function(W, D, p1, p2, p3, a1, a2, a3, gamma){
   return(sum(pk * lambda * exp(-lambda * D)))
 }
 
+# this function then calculates the likelihood for the entire data 
 lik.homo.k = function( p1, p2, p3, a1, a2, a3, gamma, W, D) { 
   i_s = mapply(lik.homo.i, W, D, MoreArgs = list(p1 = p1,p2 = p2,p3 = p3, a1 = a1, a2 = a2, a3 = a3, gamma = gamma))
   return(sum(log(i_s)))
 }
 
+#calculates likelihood for our true values 
 lik.homo.k( p$pk[1], p$pk[2], p$pk[3], p$a[1], p$a[2] , p$a[3] ,p$gamma, data$W,data$D)
 
+#we create a grid over different parameter inputs 
 g = seq(1, 2, .1)
 a1 = seq(.8, 1.2, .1)
 a2 = seq(2.8, 3.2, .1)
@@ -120,7 +128,7 @@ grid = as.data.frame(grid)
 
 grid = grid[grid$p3 >= 0,]
 
-
+# we find the maxiumum likelihood parameters over our grid 
 maxlik = function(grid, W, D){
   likely = rep(0, nrow(grid))
   likely = mapply(lik.homo.k, grid$p1, grid$p2, grid$p3, grid$a1, grid$a2, grid$a3, grid$g, MoreArgs = list(W, D))
@@ -136,19 +144,20 @@ t = maxlik(grid, data$W, data$D); t
 
 ### Question 6 
 ``` {r EM_whatever}
-# Do we need to recover the pks??
+# we find the different qik_s for an individual 
 e_step_i <- function(g0, pk, ak, w_i, d_i){
   lambda = lam(ak, g0, rho=0.9, w_i, B=0)
   prob = exp(-lambda * d_i) * lambda
   return(prob * pk / sum(prob * pk))
 }
-
+# we just find qik_s for each individual and make it into one large matrix Q
 e_step <- function(g0, pk, ak, W, D){
   pks = mapply(e_step_i, w_i = W, d_i= D, MoreArgs = list(g0 = g0, pk = pk, ak = ak))
   pks = t(pks)
   return(pks)
 }
 
+#here we find the likelihood for a given person 
 likelihood_i <- function(g0, pk, ak, w_i, d_i, q1, q2, q3 ) { 
   lambda = lam(ak, g0, rho=0.9, w_i, B=0)
   prob = exp(-lambda * d_i) * lambda
@@ -156,16 +165,24 @@ likelihood_i <- function(g0, pk, ak, w_i, d_i, q1, q2, q3 ) {
   val = sum(q_i * log(prob) * pk)
   return(val)
 }
-
+#likelihood for the entire data set 
 likelihood <- function(g0, pk, ak, W, D, Q) { 
   val = mapply(likelihood_i, w_i = W, d_i = D, q1 = Q[,1], q2 = Q[,2], q3 = Q[,3], MoreArgs = list(g0 = g0, pk = pk, ak = ak))
   return(sum(val))
 }
 
-mstep_k <- function( g0, D, W, Q_k, rho = 0.9, B= 0){ 
-  return(mean(Q_k * (rho* W - B) * (D ^ (1+g0)) ))
+# here we find lambda k 
+# not sure what to do with W in this situation 
+# what we are doing seems not very inutitive but not sure how to handle W 
+# tried to do a weight sum based on qi_k but that got even worse results
+mstep_k <- function( g0, D, W, Q_k, rho = 0.9, B= 0) {
+  # we calculate the lambda k for a given group
+  oneoverlambda =  sum(D * Q_k) / sum(Q_k)
+  # we return the ak once we have lambda k 
+  return( mean( (rho* W - B) * oneoverlambda ^ (1+g0)  ))
 }
 
+#now we just find each ak
 mstep <- function(g0, D, W, Q, rho = 0.9, B= 0) { 
   Q_1 = Q[,1]
   Q_2 = Q[,2]
@@ -174,36 +191,30 @@ mstep <- function(g0, D, W, Q, rho = 0.9, B= 0) {
   }
 
 
-pf = c(.1, .4, .5)
-a = c(2, 4, 6) 
+pf = c(.3, .2, .5)
+a = c(1, 3, 5) 
 
+#we just put Q and M step in a foor loop. 
+#does not work out perfectly, not sure what is going wrong. 
 for (i in 1:20) { 
   Q = e_step(p$gamma, pf,a, data$W, data$D)
   lik = likelihood(p$gamma, pf,a,  data$W, data$D, Q)
   print(lik)
   val = mstep(p$gamma, data$D, data$W, Q)
-  pf  = val
-  a = c( mean(Q[,1]), mean(Q[,2]), mean(Q[,3]))
+  a  = val
+  pf = c( mean(Q[,1]), mean(Q[,2]), mean(Q[,3]))
   print(pf)
   print(a)
-
 }
-
-p = list(rho=0.9, a = c(1,3,5), gamma =1.5, pk = c(0.2,0.5,0.3))
-
-  
-
-# basically we need to compute the posterior probability of being in a group given the data 
-#so in the e step we compute the pks 
-#then in the m step we compute the aks 
 
 ```
 
 ### Question 7  
+We never implemented this because it appears our EM algoirthm is not quite working properly. We would just make a grid over gamma. Turn the iteration above into a function and then do it over the grid. 
 # Fixed Effect 
 ### Question 8 
 ```{r fixed_effects}
-
+# Generating data:
 p = list(rho=0.9, gamma =1.5)
 p$n = 1000
 data = data.table(B = 0, W = exp(rnorm(p$n) -2))
@@ -214,22 +225,50 @@ data[, Lb := ((p$rho*W - B)/a)^(1/(1+p$gamma))]
 data[, Lb := pmin(pmax(Lb,0),1)] # bound it between 0 and 1
 data[, D := rexp(p$n, rate = Lb)]
 
+# For a given gamma, we calculate the a_i by finding MLE 
+# and end up with a closed-form solution for the a_i that 
+# maximizes the likelihood function
 best_ais <- function(W, D, g, B = 0, rho = p$rho){
-  # check this - we average over all D? but W_i is individual-specific?
-  return((rho * W - B)*((D))^(1+g)))
+  return((rho * W - B)*(D^(1+g)))
 }
 
+# We plug these estimates back in to the likelihood function - which 
+# is essentially just transforming the a_i back into lambda_i -- individual-specific parameters
+# If you examine the data OR the algebra, you'll see that our lambdas are no longer
+# a function of gamma
 likelihood_g <- function(g, W, D, B = 0, rho = p$rho){
   # evaluates likelihood at gamma = g
-  
-  a_opt = mapply(best_ai, W, MoreArgs = list(g=g, D=D))
+  a_opt = mapply(best_ais, W, D, MoreArgs = list(g=g))
   lambda = lam(a_opt, g, rho = 0.9, W)
-  n = length(D)
-  llhood = (n * log(lambda)) - (lambda*sum(D))
-  
+  llhood = sum(log(lambda) - lambda*D)
   return(llhood)
 }
 
+# Testing the above assertion for multiple gamma and we indeed find
+# that the lambdas (and thus likelihood) are unchanged for different g
+ag0 = mapply(best_ais, data$W, data$D, MoreArgs = list(g=1.0))
+l0 = lam(ag0, 1.0, 0.9, data$W)
+ll0 = sum(log(l0) - l0*data$D)
+
+ag1 = mapply(best_ais, data$W, data$D, MoreArgs = list(g=1.8))
+l1 = lam(ag1, 1.8, 0.9, data$W)
+ll1 = sum(log(l1) - l0*data$D)
+
+# Soooo searching over multiple gamma is not going to be helpful
+# To meaningfully search for a gamma, we'd need data of the same individual over time,
+# since as it stands now, we have so many degrees of freedom that we can essentially 
+# just pick an a_i to maximize the likelihood. But if we have multiple observations per
+# individual, then we get more meaningful variation. 
+gamma_grid = seq(.5, 2, 0.1)
+lls = rep(0, length(gamma_grid))
+
+for (i in 1:length(gamma_grid)){
+  g = gamma_grid[i]
+  lls[i] = likelihood_g(g, data$W, data$D)
+}
+
+which.max(lls)
+which.min(lls)
 ```
 ### Question 9 
 
