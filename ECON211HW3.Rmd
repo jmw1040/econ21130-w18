@@ -24,6 +24,7 @@ library(data.table)
 library(plm)
 library(lmtest)
 library(rlist)
+setwd("~/Google Drive/Classes/Fourth year/STAT 274/HW 2")
 ```
 
 
